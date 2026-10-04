@@ -214,7 +214,7 @@ a{color:var(--accent)}
     out.sort(function(a,b){return b.v-a.v;});
     var total=out.reduce(function(a,c){return a+c.v;},0);
     var s=j.s||{};
-    return {c:out,total:total,pst:num(s.pst),st:parseInt(s.st,10)||0,ts:parseInt(s.ts,10)||0,dt:j.dt,ht:j.ht};
+    return {c:out,total:total,pst:num(s.pst),st:parseInt(s.st,10)||0,ts:parseInt(s.ts,10)||0,dt:j.dt,ht:j.ht,dg:j.dg||j.dt,hg:j.hg||j.ht};
   }
 
   // Leitura com tempo limite; sem a opção "cache" (alguns navegadores de celular tratam mal esse pedido entre sites)
@@ -279,10 +279,11 @@ a{color:var(--accent)}
   }
 
   // Governador: soma dos votos por partido nos 27 estados e quantos estados cada partido lidera
+  function ordem(d,h){var p=String(d).split('/');return p[2]+p[1]+p[0]+' '+h;}
   function agregarGov(D){
     var mp={}, tot=0, st=0, ts=0, dt=null, ht=null;
     Object.keys(D).forEach(function(uf){
-      var d=D[uf]; if(!d) return; st+=d.st; ts+=d.ts; if(!dt&&d.dt){dt=d.dt;ht=d.ht;}
+      var d=D[uf]; if(!d) return; st+=d.st; ts+=d.ts; if(d.dg&&(!dt||ordem(d.dg,d.hg)>ordem(dt,ht))){dt=d.dg;ht=d.hg;}
       d.c.forEach(function(c,i){
         var e=mp[c.n]||(mp[c.n]={n:c.n,num:'',nm:c.sg,curto:c.sg,sg:c.sg,v:0,est:0,p:0});
         e.v+=c.v; tot+=c.v; if(i===0&&d.total) e.est++;
@@ -291,7 +292,7 @@ a{color:var(--accent)}
     var out=Object.keys(mp).map(function(k){var e=mp[k]; e.sub=e.est+(e.est===1?' estado na frente':' estados na frente'); return e;});
     out.sort(function(a,b){return b.v-a.v;});
     out.forEach(function(e){e.p=tot?e.v*100/tot:0;});
-    return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht};
+    return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht,dg:dt,hg:ht};
   }
   function chaveDados(m){
     return VIGIA[m].map(function(uf){var d=uf==='br'?S[m].nacional:S[m].dados[uf]; return d?(d.dt+' '+d.ht+' '+d.pst+' '+d.st):'-';}).join('|');
@@ -379,7 +380,7 @@ a{color:var(--accent)}
     var mais=$('more'); var n=nacional.c.length-4;
     mais.hidden=n<=0; mais.textContent=totAberto?'Mostrar só os 4 primeiros':'Ver os outros '+n+(modo==='gov'?' partidos':' candidatos');
     $('pst').textContent=pct(nacional.pst,2)+' ('+br(nacional.st)+' de '+br(nacional.ts)+')';
-    $('tse').textContent=(nacional.dt||'')+' '+(nacional.ht||'');
+    $('tse').textContent=(nacional.dg||'')+' '+(nacional.hg||'');
   }
 
   function texto(parent,t,x,y,size,weight,cls){
@@ -560,8 +561,7 @@ a{color:var(--accent)}
     if($('auto').checked){
       restante--; if(restante<=0){restante=INTERVALO; atualizar();}
       vigSeg--; if(vigSeg<=0){vigSeg=VIG_SEG; vigia();}
-      $('next').textContent=pad(Math.floor(restante/60))+':'+pad(restante%60);
-    } else $('next').textContent='pausado';
+    }
   }
   $('more').addEventListener('click',function(){totAberto=!totAberto; desenharTotal();});
   $('zoom').addEventListener('click',function(){
