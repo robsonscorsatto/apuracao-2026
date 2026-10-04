@@ -118,7 +118,7 @@ a{color:var(--accent)}
       <div class="sub" id="sub">Dados lidos direto do TSE a cada atualização. Nada é guardado.</div>
     </div>
     <div class="controls">
-      <label class="auto"><input type="checkbox" id="auto" checked> Atualizar a cada 5 min</label>
+      <label class="auto"><input type="checkbox" id="auto" checked> Atualizar sozinho</label>
       <button class="main" id="btn" type="button">Atualizar agora</button>
     </div>
   </header>
@@ -129,7 +129,8 @@ a{color:var(--accent)}
 
   <div class="status" id="status" aria-live="polite">
     <span>Última leitura: <b id="last">nunca</b></span>
-    <span>Próxima em: <b id="next">--:--</b></span>
+    <span>Próxima leitura completa: <b id="next">--:--</b></span>
+    <span>Verificado: <b id="ver">--</b></span>
     <span>TSE atualizou em: <b id="tse">--</b></span>
     <span><span id="pstl">Seções totalizadas no Brasil:</span> <b id="pst">--</b></span>
   </div>
@@ -175,8 +176,9 @@ a{color:var(--accent)}
     pres:{titulo:'Apuração Presidente 2026',cargo:'0001',re:/^presidente$/i,padrao:'6257',teste:'br',htot:'Total geral (Brasil, inclui exterior)',pstl:'Seções totalizadas no Brasil:'},
     gov:{titulo:'Apuração Governador 2026',cargo:'0003',re:/^governador$/i,padrao:'6259',teste:'sp',htot:'Total geral dos governadores (soma dos 27 estados, por partido)',pstl:'Seções totalizadas nos 27 estados:'}
   };
-  var S = {pres:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false},gov:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false}};
+  var S = {pres:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false,chave:''},gov:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false,chave:''}};
   var modo = 'pres';
+  var VIGIA = {pres:['br'],gov:['sp','mg','rj']}, VIG_SEG = 30;
   var UFS27 = Object.keys(STATES);
   function ufsDoModo(m){return m==='gov'?UFS27.slice():UFS27.concat(['zz']);}
   var CALLOUT = ['rn','pb','pe','al','se','df','es','rj'];
@@ -292,6 +294,23 @@ a{color:var(--accent)}
     out.forEach(function(e){e.p=tot?e.v*100/tot:0;});
     return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht};
   }
+  function chaveDados(m){
+    return VIGIA[m].map(function(uf){var d=uf==='br'?S[m].nacional:S[m].dados[uf]; return d?(d.dt+' '+d.ht+' '+d.pst+' '+d.st):'-';}).join('|');
+  }
+  // Vigia: a cada 30 s lê só 1 a 3 arquivos pequenos; se o TSE publicou algo novo, faz a leitura completa
+  var vigiando=false, vigSeg=VIG_SEG;
+  async function vigia(){
+    var m=modo;
+    if(vigiando||ocupado||!S[m].ok||!S[m].cfg) return; vigiando=true;
+    try{
+      var code=S[m].cfg;
+      var rs=await Promise.all(VIGIA[m].map(function(uf){return lerJSON(urlUF(code,uf,m)).then(function(j){return parse(j,m);});}));
+      var chave=rs.map(function(d){return d.dt+' '+d.ht+' '+d.pst+' '+d.st;}).join('|');
+      var d=new Date(); $('ver').textContent=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+      if(chave!==S[m].chave && m===modo){ vigiando=false; await atualizar(); }
+    }catch(e){}
+    vigiando=false;
+  }
   function sync(){dados=S[modo].dados; nacional=S[modo].nacional; $('last').textContent=S[modo].last;}
 
   async function atualizar(){
@@ -309,7 +328,7 @@ a{color:var(--accent)}
     }
     if(ok){
       if(m==='gov') S[m].nacional=agregarGov(S[m].dados);
-      var d=new Date(); S[m].ok=true;
+      var d=new Date(); S[m].ok=true; S[m].chave=chaveDados(m);
       S[m].last=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
     }
     if(m===modo){
@@ -541,6 +560,7 @@ a{color:var(--accent)}
   function tick(){
     if($('auto').checked){
       restante--; if(restante<=0){restante=INTERVALO; atualizar();}
+      vigSeg--; if(vigSeg<=0){vigSeg=VIG_SEG; vigia();}
       $('next').textContent=pad(Math.floor(restante/60))+':'+pad(restante%60);
     } else $('next').textContent='pausado';
   }
