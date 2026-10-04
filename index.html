@@ -21,6 +21,14 @@ button.main{font:inherit;border:1px solid var(--accent);background:var(--accent)
 button.main:disabled{opacity:.55;cursor:wait}
 button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 label.auto{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:.9rem}
+.lead{display:flex;flex-wrap:wrap;gap:6px 10px}
+.lead .ld{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px 14px;flex:1 1 260px;min-width:0}
+.lead .dot{width:14px;height:14px;border-radius:4px;flex:none}
+.lead .nm{min-width:0;font-weight:600;line-height:1.15;overflow-wrap:anywhere}
+.lead .nm small{display:none;color:var(--muted);font-weight:400;font-size:.74rem}
+.lead .pc{margin-left:auto;font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.lead .em{color:var(--muted);padding:6px 4px;font-size:.85rem;align-self:center}
+.hint{display:none}
 .status{display:flex;flex-wrap:wrap;gap:2px 20px;color:var(--muted);font-size:.88rem;font-variant-numeric:tabular-nums}
 .status b{color:var(--fg)}
 .msg{padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:.9rem}
@@ -37,7 +45,7 @@ label.auto{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:
 .cand .nm small{color:var(--muted);font-weight:400}
 .cand .pc{font-weight:700}
 .cand .vt{color:var(--muted);font-size:.8rem}
-.mapbox{overflow-x:auto;max-width:880px;margin:0 auto}
+.mapbox{overflow-x:auto;max-width:850px;margin:0 auto}
 svg.map{display:block;width:100%;min-width:760px;height:auto}
 .st{cursor:pointer;stroke:var(--panel);stroke-width:.8;stroke-linejoin:round}
 .st.sel{stroke:var(--fg);stroke-width:2}
@@ -76,13 +84,21 @@ a{color:var(--accent)}
   .controls{width:100%;justify-content:space-between}
   button.main{min-height:44px;padding:8px 18px}
   .more{min-height:40px}
-  svg.map{min-width:0}
-  .mapbox{overflow:visible;max-width:520px}
+  svg.map{min-width:980px}
+  .mapbox{overflow-x:auto;max-width:none;-webkit-overflow-scrolling:touch;border-radius:8px}
+  .hint{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 6px;color:var(--muted);font-size:.82rem}
+  .hint .more{margin:0;flex:none}
+  .mapbox.fit svg.map{min-width:0}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:8px}
   th:nth-child(2),td:nth-child(2){display:none}
 }
 @media (max-width:520px){
   .sub{display:none}
+  .lead{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .lead .nm small{display:block}
+  .lead .ld{flex-wrap:wrap;gap:2px 8px;padding:8px 10px;align-content:center}
+  .lead .pc{width:100%;margin-left:0;order:3;font-size:1.6rem;line-height:1.1}
+  .lead .nm{flex:1 1 0}
   .status{font-size:.8rem}
 }
 </style>
@@ -100,6 +116,8 @@ a{color:var(--accent)}
     </div>
   </header>
 
+  <div class="lead" id="lead" aria-live="polite"></div>
+
   <div class="status" id="status" aria-live="polite">
     <span>Última leitura: <b id="last">nunca</b></span>
     <span>Próxima em: <b id="next">--:--</b></span>
@@ -111,7 +129,8 @@ a{color:var(--accent)}
 
   <section class="panel" aria-labelledby="hmap">
     <h2 id="hmap">Resultado por estado</h2>
-    <div class="mapbox"><svg class="map" id="svg" viewBox="0 0 790 639" role="group" aria-label="Mapa do Brasil com o resultado de Presidente em cada estado"></svg></div>
+    <div class="hint" id="hint"><span id="hintx">Arraste o mapa para os lados. A lista logo abaixo mostra os mesmos números.</span> <button type="button" class="more" id="zoom">Ver mapa inteiro</button></div>
+    <div class="mapbox" id="mapbox"><svg class="map" id="svg" viewBox="0 0 790 639" role="group" aria-label="Mapa do Brasil com o resultado de Presidente em cada estado"></svg></div>
     <div class="cards" id="cards" aria-label="Resultado por estado em lista"></div>
     <p class="note">Cor do estado: candidato mais votado (mais clara quando a vantagem é pequena). Percentuais sobre os votos válidos já apurados. Toque num estado para ver todos os candidatos.</p>
   </section>
@@ -242,6 +261,18 @@ a{color:var(--accent)}
     d.appendChild(dot); d.appendChild(nm); d.appendChild(pc); d.appendChild(vt); return d;
   }
 
+  function desenharLider(){
+    var box=$('lead'); box.innerHTML='';
+    if(!nacional||!nacional.total){return;}
+    nacional.c.slice(0,2).forEach(function(c,i){
+      var d=document.createElement('div'); d.className='ld';
+      var dot=document.createElement('span'); dot.className='dot'; dot.style.background=cor(c.n);
+      var nm=document.createElement('span'); nm.className='nm'; nm.textContent=c.nm;
+      var sm=document.createElement('small'); sm.textContent=(i===0?'1º no Brasil':'2º no Brasil')+' · '+c.sg+' '+c.n; nm.appendChild(sm);
+      var pc=document.createElement('span'); pc.className='pc'; pc.textContent=pct(c.p,2);
+      d.appendChild(dot); d.appendChild(nm); d.appendChild(pc); box.appendChild(d);
+    });
+  }
   function desenharTotal(){
     var st=$('stack'), tot=$('total'); st.innerHTML=''; tot.innerHTML='';
     if(!nacional||!nacional.total){tot.innerHTML='<p class="note">Sem votos apurados ainda.</p>';return;}
@@ -274,8 +305,7 @@ a{color:var(--accent)}
   if(PHONE.addEventListener) PHONE.addEventListener('change',function(){desenhar();});
   function desenharMapa(){
     var svg=$('svg'); svg.innerHTML='';
-    var mob = MOB.matches;
-    svg.setAttribute('viewBox', mob ? '0 0 613 639' : '0 0 790 639');
+    svg.setAttribute('viewBox','0 0 790 639');
     var g=el('g',{},svg), lab=el('g',{},svg);
     Object.keys(STATES).forEach(function(id){
       var s=STATES[id], d=dados[id], f=fillOf(d);
@@ -288,87 +318,77 @@ a{color:var(--accent)}
       p.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();escolher(id);}});
     });
     if(sel&&STATES[sel]){var ps=g.querySelector('[data-id="'+sel+'"]'); if(ps) g.appendChild(ps);}
-    if(mob){
-      // celular e tablet: só a sigla no mapa; os percentuais ficam nos cartões logo abaixo
-      Object.keys(STATES).forEach(function(id){
-        var s=STATES[id], d=dados[id], tam = s.r>=17 ? 14 : (s.r>=9 ? 10.5 : 9);
-        var comPct = d && s.r>=17 && !PHONE.matches;
-        texto(lab,id.toUpperCase(),s.ax,s.ay+(comPct?-1:tam*0.35),tam,800, d&&d.total?'lbl':'lbl pend');
-        if(comPct) texto(lab,pct(d.pst,0),s.ax,s.ay+10.5,9.5,700, d.total?'lbl':'lbl pend');
-      });
-      return;
-    }
     // rótulos dentro dos estados
     Object.keys(STATES).forEach(function(id){
       if(CALLOUT.indexOf(id)>=0) return;
       var s=STATES[id], d=dados[id], r=s.r, x=s.ax, y=s.ay;
       var uf=id.toUpperCase();
       if(!d||!d.total){
-        texto(lab,uf,x,y-1,8,700,'lbl pend');
-        texto(lab,pct(d?d.pst:0,0)+' apur.',x,y+8,6,600,'lbl pend');
+        texto(lab,uf,x,y-1,9,700,'lbl pend');
+        texto(lab,pct(d?d.pst:0,0)+' apur.',x,y+9,7,600,'lbl pend');
         return;
       }
       var a=d.c[0], b=d.c[1];
       if(r>=30){
-        var y0=y-19;
-        texto(lab,uf,x,y0+8,9.5,800);
-        texto(lab,a.curto+' '+pct(a.p),x,y0+18.5,7.4,700);
-        if(b) texto(lab,b.curto+' '+pct(b.p),x,y0+27,7.4,600);
-        var w=Math.min(2*r*0.78,58), bx=x-w/2, by=y0+31;
+        var y0=y-22;
+        texto(lab,uf,x,y0+9,10.8,800);
+        texto(lab,a.curto+' '+pct(a.p),x,y0+20.5,8.6,700);
+        if(b) texto(lab,b.curto+' '+pct(b.p),x,y0+30,8.6,600);
+        var w=Math.min(2*r*0.8,62), bx=x-w/2, by=y0+34;
         var resto=Math.max(0,d.total-a.v-(b?b.v:0));
         var segs=[[a,a.v],[b,b?b.v:0],[null,resto]], acc=0;
         segs.forEach(function(sg){var ww=w*sg[1]/d.total; if(ww<=0) return;
           el('rect',{x:(bx+acc).toFixed(2),y:by,width:ww.toFixed(2),height:3.4,fill:sg[0]?cor(sg[0].n):'#888',stroke:'#fff','stroke-width':.5},lab); acc+=ww;});
-        texto(lab,pct(d.pst,0)+' apurado',x,by+11.5,6.8,700);
+        texto(lab,pct(d.pst,0)+' apurado',x,by+12.5,7.6,700);
       } else {
-        var y1=y-14.5;
-        texto(lab,uf,x,y1+7,7.8,800);
+        var y1=y-16.5;
+        texto(lab,uf,x,y1+8,9,800);
         [a,b].forEach(function(c,i){ if(!c) return;
-          var yy=y1+15.2+i*7.8;
-          el('circle',{cx:x-11.5,cy:yy-2.3,r:2.2,fill:cor(c.n),stroke:'#fff','stroke-width':.7},lab);
-          texto(lab,pct(c.p).replace('%',''),x+2,yy,6.9,700);
+          var yy=y1+17.4+i*8.8;
+          el('circle',{cx:x-12.5,cy:yy-2.7,r:2.5,fill:cor(c.n),stroke:'#fff','stroke-width':.8},lab);
+          texto(lab,pct(c.p).replace('%',''),x+2.5,yy,8,700);
         });
-        texto(lab,pct(d.pst,0)+' apur.',x,y1+30.8,5.9,700);
+        texto(lab,pct(d.pst,0)+' apur.',x,y1+35.8,6.8,700);
       }
     });
     // legendas externas para estados pequenos
     var itens=CALLOUT.map(function(id){return {id:id,s:STATES[id]};}).sort(function(m,n){return m.s.ay-n.s.ay;});
     var prev=-99;
     itens.forEach(function(it){
-      var s=it.s, d=dados[it.id], yb=Math.max(s.ay-16,prev+46); prev=yb;
-      var bx=628,bw=156,bh=42;
+      var s=it.s, d=dados[it.id], yb=Math.max(s.ay-16,prev+50); prev=yb;
+      var bx=628,bw=156,bh=46;
       if(it.id==='df') el('polyline',{points:s.ax+','+s.ay+' 598,'+s.ay+' '+bx+','+(yb+bh/2),'class':'leader'},lab);
       else el('line',{x1:s.ax,y1:s.ay,x2:bx,y2:yb+bh/2,'class':'leader'},lab);
       el('circle',{cx:s.ax,cy:s.ay,r:1.9,'class':'anchor'},lab);
       var box=el('rect',{x:bx,y:yb,width:bw,height:bh,rx:4,'class':'co-box'+(sel===it.id?' sel':''),tabindex:0,role:'button','aria-label':s.name},lab);
       box.addEventListener('click',function(){escolher(it.id);});
       box.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();escolher(it.id);}});
-      texto(lab,it.id.toUpperCase(),bx+6,yb+10.5,8.2,800,'co-t').setAttribute('text-anchor','start');
+      texto(lab,it.id.toUpperCase(),bx+6,yb+11,9.4,800,'co-t').setAttribute('text-anchor','start');
       if(d&&d.total){
         var f=fillOf(d); var sw=el('rect',{x:bx+bw-9,y:yb+4,width:5,height:5,rx:1,fill:f.color,'fill-opacity':f.op},lab);
         [d.c[0],d.c[1]].forEach(function(c,i){ if(!c) return;
-          el('circle',{cx:bx+9+i*0,cy:yb+16.8+i*8,r:2.3,fill:cor(c.n)},lab);
-          texto(lab,c.curto+' '+pct(c.p),bx+15,yb+19.3+i*8,7.4,i?500:700,'co-t').setAttribute('text-anchor','start');
+          el('circle',{cx:bx+9,cy:yb+18.3+i*9,r:2.5,fill:cor(c.n)},lab);
+          texto(lab,c.curto+' '+pct(c.p),bx+16,yb+21+i*9,8.4,i?500:700,'co-t').setAttribute('text-anchor','start');
         });
-        texto(lab,pct(d.pst,0)+' das seções apuradas',bx+6,yb+37.5,6.6,500,'co-t m').setAttribute('text-anchor','start');
+        texto(lab,pct(d.pst,0)+' das seções apuradas',bx+6,yb+41.5,7.4,500,'co-t m').setAttribute('text-anchor','start');
       } else {
-        texto(lab,'sem votos apurados',bx+6,yb+24,7.4,400,'co-t m').setAttribute('text-anchor','start');
-        texto(lab,pct(d?d.pst:0,0)+' das seções apuradas',bx+6,yb+37.5,6.6,500,'co-t m').setAttribute('text-anchor','start');
+        texto(lab,'sem votos apurados',bx+6,yb+26,8,400,'co-t m').setAttribute('text-anchor','start');
+        texto(lab,pct(d?d.pst:0,0)+' das seções apuradas',bx+6,yb+41.5,7.4,500,'co-t m').setAttribute('text-anchor','start');
       }
     });
     // exterior
-    var dz=dados.zz, yz=Math.max(prev+55,480);
-    var bz=el('rect',{x:628,y:yz,width:156,height:60,rx:4,'class':'co-box'+(sel==='zz'?' sel':''),tabindex:0,role:'button','aria-label':'Votos no exterior'},lab);
+    var dz=dados.zz, yz=Math.max(prev+58,490);
+    var bz=el('rect',{x:628,y:yz,width:156,height:66,rx:4,'class':'co-box'+(sel==='zz'?' sel':''),tabindex:0,role:'button','aria-label':'Votos no exterior'},lab);
     bz.addEventListener('click',function(){escolher('zz');});
     bz.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();escolher('zz');}});
-    texto(lab,'EXTERIOR',634,yz+11,8.2,800,'co-t').setAttribute('text-anchor','start');
+    texto(lab,'EXTERIOR',634,yz+12,9.4,800,'co-t').setAttribute('text-anchor','start');
     if(dz&&dz.total){
       [dz.c[0],dz.c[1]].forEach(function(c,i){ if(!c) return;
-        el('circle',{cx:643,cy:yz+22.8+i*9,r:2.3,fill:cor(c.n)},lab);
-        texto(lab,c.curto+' '+pct(c.p),649,yz+25.3+i*9,7.4,i?500:700,'co-t').setAttribute('text-anchor','start');
+        el('circle',{cx:643,cy:yz+24.3+i*10,r:2.5,fill:cor(c.n)},lab);
+        texto(lab,c.curto+' '+pct(c.p),650,yz+27+i*10,8.4,i?500:700,'co-t').setAttribute('text-anchor','start');
       });
-    } else texto(lab,'sem votos apurados',634,yz+30,7.4,400,'co-t m').setAttribute('text-anchor','start');
-    texto(lab,pct(dz?dz.pst:0,0)+' das seções apuradas',634,yz+52,6.6,500,'co-t m').setAttribute('text-anchor','start');
+    } else texto(lab,'sem votos apurados',634,yz+32,8,400,'co-t m').setAttribute('text-anchor','start');
+    texto(lab,pct(dz?dz.pst:0,0)+' das seções apuradas',634,yz+57,7.4,500,'co-t m').setAttribute('text-anchor','start');
   }
 
   function desenharDetalhe(){
@@ -424,7 +444,7 @@ a{color:var(--accent)}
     var dt=$('detail');
     if(MOB.matches && !dt.hidden && dt.scrollIntoView){ try{dt.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){dt.scrollIntoView();} }
   }
-  function desenhar(){desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
+  function desenhar(){desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
   if(MOB.addEventListener) MOB.addEventListener('change',desenhar); else if(MOB.addListener) MOB.addListener(desenhar);
 
   function tick(){
@@ -434,6 +454,11 @@ a{color:var(--accent)}
     } else $('next').textContent='pausado';
   }
   $('more').addEventListener('click',function(){totAberto=!totAberto; desenharTotal();});
+  $('zoom').addEventListener('click',function(){
+    var mb=$('mapbox'); var fit=mb.classList.toggle('fit');
+    $('zoom').textContent = fit ? 'Ampliar o mapa' : 'Ver mapa inteiro';
+    $('hintx').textContent = fit ? 'Mapa inteiro. Toque em Ampliar para ler os números dentro dos estados.' : 'Arraste o mapa para os lados. A lista logo abaixo mostra os mesmos números.';
+  });
   $('btn').addEventListener('click',atualizar);
   $('auto').addEventListener('change',function(){restante=INTERVALO;tick();});
   desenharMapa(); setInterval(tick,1000); atualizar();
