@@ -28,6 +28,9 @@ label.auto{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:
 .lead .nm small{display:none;color:var(--muted);font-weight:400;font-size:.74rem}
 .lead .pc{margin-left:auto;font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .lead .em{color:var(--muted);padding:6px 4px;font-size:.85rem;align-self:center}
+.tabs{display:inline-flex;gap:0;border:1px solid var(--accent);border-radius:10px;overflow:hidden;align-self:flex-start;background:var(--panel)}
+.tabs button{font:inherit;font-weight:650;border:0;background:transparent;color:var(--accent);padding:8px 22px;cursor:pointer;min-height:40px}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent)}
 .hint{display:none}
 .status{display:flex;flex-wrap:wrap;gap:2px 20px;color:var(--muted);font-size:.88rem;font-variant-numeric:tabular-nums}
 .status b{color:var(--fg)}
@@ -83,6 +86,8 @@ a{color:var(--accent)}
   header{align-items:stretch}
   .controls{width:100%;justify-content:space-between}
   button.main{min-height:44px;padding:8px 18px}
+  .tabs{align-self:stretch;display:flex}
+  .tabs button{flex:1;min-height:46px;font-size:1.02rem}
   .more{min-height:40px}
   svg.map{min-width:980px}
   .mapbox{overflow-x:auto;max-width:none;-webkit-overflow-scrolling:touch;border-radius:8px}
@@ -107,7 +112,7 @@ a{color:var(--accent)}
 <div class="wrap">
   <header>
     <div>
-      <h1>Apuração Presidente 2026</h1>
+      <h1 id="h1">Apuração Presidente 2026</h1>
       <div class="sub" id="sub">Dados lidos direto do TSE a cada atualização. Nada é guardado.</div>
     </div>
     <div class="controls">
@@ -116,13 +121,15 @@ a{color:var(--accent)}
     </div>
   </header>
 
+  <div class="tabs" role="tablist" aria-label="Cargo"><button type="button" role="tab" id="tab-pres" aria-selected="true">Presidente</button><button type="button" role="tab" id="tab-gov" aria-selected="false">Governador</button></div>
+
   <div class="lead" id="lead" aria-live="polite"></div>
 
   <div class="status" id="status" aria-live="polite">
     <span>Última leitura: <b id="last">nunca</b></span>
     <span>Próxima em: <b id="next">--:--</b></span>
     <span>TSE atualizou em: <b id="tse">--</b></span>
-    <span>Seções totalizadas no Brasil: <b id="pst">--</b></span>
+    <span><span id="pstl">Seções totalizadas no Brasil:</span> <b id="pst">--</b></span>
   </div>
 
   <div id="msg" class="msg" hidden></div>
@@ -130,7 +137,7 @@ a{color:var(--accent)}
   <section class="panel" aria-labelledby="hmap">
     <h2 id="hmap">Resultado por estado</h2>
     <div class="hint" id="hint"><span id="hintx">Arraste o mapa para os lados. A lista logo abaixo mostra os mesmos números.</span> <button type="button" class="more" id="zoom">Ver mapa inteiro</button></div>
-    <div class="mapbox" id="mapbox"><svg class="map" id="svg" viewBox="0 0 790 639" role="group" aria-label="Mapa do Brasil com o resultado de Presidente em cada estado"></svg></div>
+    <div class="mapbox" id="mapbox"><svg class="map" id="svg" viewBox="0 0 790 639" role="group" aria-label="Mapa do Brasil com o resultado em cada estado"></svg></div>
     <div class="cards" id="cards" aria-label="Resultado por estado em lista"></div>
     <p class="note">Cor do estado: candidato mais votado (mais clara quando a vantagem é pequena). Percentuais sobre os votos válidos já apurados. Toque num estado para ver todos os candidatos.</p>
   </section>
@@ -155,14 +162,21 @@ a{color:var(--accent)}
   var CODE_PADRAO = '6257';
   var INTERVALO = 300;
   var NS = 'http://www.w3.org/2000/svg';
-  var FIXAS = {'13':'#c0262d','22':'#1b4fa8'};
+  var FIXAS = {'13':'#c0262d','22':'#1b4fa8','P:PT':'#c0262d','P:PL':'#1b4fa8'};
   var PALETA = ['#a65f00','#2e7d5b','#6a4c9c','#00838f','#7b5e3b','#ad1457','#546e7a','#5d6d00','#8e3b46','#3d5a80'];
   var TITULOS = {'ESCRITOR':1,'VETERINARIO':1,'VETERINÁRIO':1,'PROFESSOR':1,'DOUTOR':1,'DR':1,'DRA':1,'PASTOR':1,'CORONEL':1,'DELEGADO':1,'CABO':1,'SARGENTO':1,'GENERAL':1};
   var NOMES = {'FLAVIO':'Flávio','LUIZ':'Lula'};
   var $ = function(id){return document.getElementById(id);};
   var totAberto = false;
-  var cores = {}, corIdx = 0, dados = {}, nacional = null, sel = null, restante = INTERVALO, ocupado = false, cfg = null;
-  var UFS = Object.keys(STATES).concat(['zz']);
+  var cores = {}, corIdx = 0, dados = {}, nacional = null, sel = null, restante = INTERVALO, ocupado = false;
+  var MODOS = {
+    pres:{titulo:'Apuração Presidente 2026',cargo:'0001',re:/^presidente$/i,padrao:'6257',teste:'br',htot:'Total geral (Brasil, inclui exterior)',pstl:'Seções totalizadas no Brasil:'},
+    gov:{titulo:'Apuração Governador 2026',cargo:'0003',re:/^governador$/i,padrao:'6259',teste:'sp',htot:'Total geral dos governadores (soma dos 27 estados, por partido)',pstl:'Seções totalizadas nos 27 estados:'}
+  };
+  var S = {pres:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false},gov:{dados:{},nacional:null,last:'nunca',cfg:null,ok:false}};
+  var modo = 'pres';
+  var UFS27 = Object.keys(STATES);
+  function ufsDoModo(m){return m==='gov'?UFS27.slice():UFS27.concat(['zz']);}
   var CALLOUT = ['rn','pb','pe','al','se','df','es','rj'];
 
   function pad(n){return (n<10?'0':'')+n;}
@@ -187,10 +201,10 @@ a{color:var(--accent)}
   }
   function num(s){var x=parseFloat(String(s).replace(/\./g,'').replace(',','.'));return isNaN(x)?0:x;}
 
-  function parse(j){
+  function parse(j,m){
     var out=[]; var c=(j.carg||[])[0]; if(!c) throw new Error('arquivo sem cargo');
     (c.agr||[]).forEach(function(a){(a.par||[]).forEach(function(p){(p.cand||[]).forEach(function(x){
-      out.push({n:String(x.n),nm:x.nmu||x.nm,curto:curto(x.nmu||x.nm),sg:p.sg||'',v:parseInt(x.vap,10)||0,p:num(x.pvap)});
+      out.push({n:(m==='gov'?'P:'+(p.sg||x.n):String(x.n)),num:String(x.n),nm:x.nmu||x.nm,curto:curto(x.nmu||x.nm),sg:p.sg||'',v:parseInt(x.vap,10)||0,p:num(x.pvap)});
     });});});
     out.sort(function(a,b){return b.v-a.v;});
     var total=out.reduce(function(a,c){return a+c.v;},0);
@@ -198,56 +212,114 @@ a{color:var(--accent)}
     return {c:out,total:total,pst:num(s.pst),st:parseInt(s.st,10)||0,ts:parseInt(s.ts,10)||0,dt:j.dt,ht:j.ht};
   }
 
-  async function lerJSON(url){
-    var r = await fetch(url,{cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
+  // Leitura com tempo limite; sem a opção "cache" (alguns navegadores de celular tratam mal esse pedido entre sites)
+  function lerJSON(url){
+    return new Promise(function(resolve,reject){
+      var ctrl = window.AbortController ? new AbortController() : null;
+      var timer = setTimeout(function(){ if(ctrl) ctrl.abort(); reject(new Error('tempo esgotado')); },25000);
+      fetch(url, ctrl ? {signal:ctrl.signal} : undefined).then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.json();
+      }).then(function(j){clearTimeout(timer);resolve(j);},function(e){clearTimeout(timer);reject(e);});
+    });
   }
-  function urlUF(code,uf){return BASE+CICLO+'/'+code+'/dados/'+uf+'/'+uf+'-c0001-e'+('000000'+code).slice(-6)+'-u.json?nocache='+Date.now();}
+  function urlUF(code,uf,m){return BASE+CICLO+'/'+code+'/dados/'+uf+'/'+uf+'-c'+MODOS[m].cargo+'-e'+('000000'+code).slice(-6)+'-u.json?nocache='+Date.now()+Math.floor(Math.random()*1000);}
+  function esperar(ms){return new Promise(function(r){setTimeout(r,ms);});}
+  // tenta de novo uma vez antes de desistir
+  function lerComRetry(code,uf,m){
+    var ler=function(){return lerJSON(urlUF(code,uf,m)).then(function(j){return parse(j,m);});};
+    return ler().catch(function(){return esperar(700).then(ler);});
+  }
+  // no máximo 6 pedidos ao mesmo tempo (celular em rede móvel perde pedidos quando são muitos de uma vez)
+  function emLotes(tarefas,limite){
+    return new Promise(function(resolve){
+      var out=new Array(tarefas.length), prox=0, feitos=0;
+      if(!tarefas.length) return resolve(out);
+      function proximo(){
+        if(prox>=tarefas.length) return;
+        var i=prox++;
+        tarefas[i]().then(function(v){out[i]={ok:true,v:v};},function(e){out[i]={ok:false,e:e};}).then(function(){
+          feitos++; if(feitos===tarefas.length) resolve(out); else proximo();
+        });
+      }
+      for(var k=0;k<Math.min(limite,tarefas.length);k++) proximo();
+    });
+  }
+  function descreverErro(e){
+    var n=e&&e.name?e.name:'Erro', m=e&&e.message?e.message:String(e);
+    return (n==='TypeError'||n==='Error')?m:(n+': '+m);
+  }
 
-  async function descobrirCodigo(){
-    if(cfg) return cfg;
-    var achados=[];
+  async function descobrirCodigo(m){
+    if(S[m].cfg) return S[m].cfg;
+    var M=MODOS[m], achados=[];
     try{
       var j = await lerJSON(BASE+'comum/config/ele-c.json?nocache='+Date.now());
       (j.pl||[]).forEach(function(p){
         if(p.c!==CICLO) return;
         (p.e||[]).forEach(function(e){
-          var temPres=false; (e.abr||[]).forEach(function(a){(a.cp||[]).forEach(function(cp){if(/^presidente$/i.test(cp.ds)) temPres=true;});});
-          if(temPres) achados.push({cd:String(e.cd),t:parseInt(e.t,10)||1});
+          var tem=false; (e.abr||[]).forEach(function(a){(a.cp||[]).forEach(function(cp){if(M.re.test(cp.ds)) tem=true;});});
+          if(tem) achados.push({cd:String(e.cd),t:parseInt(e.t,10)||1});
         });
       });
     }catch(e){}
     achados.sort(function(a,b){return b.t-a.t;});
     var lista = achados.map(function(a){return a.cd;});
-    if(lista.indexOf(CODE_PADRAO)<0) lista.push(CODE_PADRAO);
+    if(lista.indexOf(M.padrao)<0) lista.push(M.padrao);
+    var ultimo=null;
     for(var i=0;i<lista.length;i++){
-      try{ await lerJSON(urlUF(lista[i],'br')); cfg=lista[i]; return cfg; }catch(e){}
+      try{ await lerJSON(urlUF(lista[i],M.teste,m)); S[m].cfg=lista[i]; return lista[i]; }catch(e){ ultimo=e; }
     }
-    throw new Error('Não achei a eleição de Presidente no TSE.');
+    throw ultimo || new Error('Não achei a eleição no TSE.');
   }
+
+  // Governador: soma dos votos por partido nos 27 estados e quantos estados cada partido lidera
+  function agregarGov(D){
+    var mp={}, tot=0, st=0, ts=0, dt=null, ht=null;
+    Object.keys(D).forEach(function(uf){
+      var d=D[uf]; if(!d) return; st+=d.st; ts+=d.ts; if(!dt&&d.dt){dt=d.dt;ht=d.ht;}
+      d.c.forEach(function(c,i){
+        var e=mp[c.n]||(mp[c.n]={n:c.n,num:'',nm:c.sg,curto:c.sg,sg:c.sg,v:0,est:0,p:0});
+        e.v+=c.v; tot+=c.v; if(i===0&&d.total) e.est++;
+      });
+    });
+    var out=Object.keys(mp).map(function(k){var e=mp[k]; e.sub=e.est+(e.est===1?' estado na frente':' estados na frente'); return e;});
+    out.sort(function(a,b){return b.v-a.v;});
+    out.forEach(function(e){e.p=tot?e.v*100/tot:0;});
+    return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht};
+  }
+  function sync(){dados=S[modo].dados; nacional=S[modo].nacional; $('last').textContent=S[modo].last;}
 
   async function atualizar(){
     if(ocupado) return; ocupado=true; $('btn').disabled=true; restante=INTERVALO;
+    var m=modo, lista=ufsDoModo(m).concat(m==='pres'?['br']:[]), res=null, falhas=[], ok=0;
     try{
-      var code = await descobrirCodigo();
-      var res = await Promise.allSettled(UFS.concat(['br']).map(function(uf){return lerJSON(urlUF(code,uf)).then(parse);}));
-      var falhas=0, ok=0;
-      UFS.concat(['br']).forEach(function(uf,i){
+      var code = await descobrirCodigo(m);
+      res = await emLotes(lista.map(function(uf){return function(){return lerComRetry(code,uf,m);};}),6);
+      lista.forEach(function(uf,i){
         var r=res[i];
-        if(r.status==='fulfilled'){ok++; if(uf==='br') nacional=r.value; else dados[uf]=r.value;} else falhas++;
+        if(r&&r.ok){ok++; if(uf==='br') S[m].nacional=r.v; else S[m].dados[uf]=r.v;} else falhas.push(uf.toUpperCase()+' ('+descreverErro(r&&r.e)+')');
       });
-      if(!ok) throw new Error('nenhum arquivo respondeu');
-      var d=new Date();
-      $('last').textContent=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
-      msg(falhas?('Não consegui ler '+falhas+' de '+res.length+' arquivos nesta rodada. O restante mantém a leitura anterior.'):'', 'warn');
-      desenhar();
     }catch(e){
-      var t=String(e&&e.message||e);
-      if(e instanceof TypeError) msg('O navegador bloqueou a leitura dos dados do TSE ('+t+'). Isso acontece quando o TSE não autoriza páginas de fora do site dele, ou quando falta internet.','err');
-      else msg('Erro ao ler o TSE: '+t,'err');
+      falhas=['(início) '+descreverErro(e)];
+    }
+    if(ok){
+      if(m==='gov') S[m].nacional=agregarGov(S[m].dados);
+      var d=new Date(); S[m].ok=true;
+      S[m].last=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    }
+    if(m===modo){
+      if(!ok){
+        var det=falhas[0]||'sem resposta';
+        msg('Não consegui ler os dados do TSE agora. Detalhe: '+det+(navigator.onLine===false?'. O aparelho parece estar sem internet.':'')+'. Toque em Atualizar agora para tentar de novo. Se continuar, me avise o detalhe acima.','err');
+      } else {
+        msg(falhas.length?('Não consegui ler '+falhas.length+' de '+lista.length+' arquivos nesta rodada ('+falhas.slice(0,3).join('; ')+(falhas.length>3?'; ...':'')+'). O restante mantém a leitura anterior.'):'', 'warn');
+      }
+      sync();
+      try{ desenhar(); }catch(e){ msg('Erro ao desenhar a tela: '+descreverErro(e)+'. Me avise este texto.','err'); }
     }
     ocupado=false; $('btn').disabled=false;
+    if(modo!==m && !S[modo].ok) atualizar();
   }
 
   function msg(t,k){var m=$('msg'); if(!t){m.hidden=true;return;} m.className='msg '+(k||''); m.textContent=t; m.hidden=false;}
@@ -255,7 +327,7 @@ a{color:var(--accent)}
   function linhaCand(c){
     var d=document.createElement('div'); d.className='cand';
     var dot=document.createElement('span'); dot.className='dot'; dot.style.background=cor(c.n);
-    var nm=document.createElement('span'); nm.className='nm'; nm.textContent=c.nm+' '; var sm=document.createElement('small'); sm.textContent=c.sg+' '+c.n; nm.appendChild(sm);
+    var nm=document.createElement('span'); nm.className='nm'; nm.textContent=c.nm+' '; var sm=document.createElement('small'); sm.textContent=c.sub||(c.sg+' '+c.num); nm.appendChild(sm);
     var pc=document.createElement('span'); pc.className='pc'; pc.textContent=pct(c.p,2);
     var vt=document.createElement('span'); vt.className='vt'; vt.textContent='('+br(c.v)+')';
     d.appendChild(dot); d.appendChild(nm); d.appendChild(pc); d.appendChild(vt); return d;
@@ -268,14 +340,14 @@ a{color:var(--accent)}
       var d=document.createElement('div'); d.className='ld';
       var dot=document.createElement('span'); dot.className='dot'; dot.style.background=cor(c.n);
       var nm=document.createElement('span'); nm.className='nm'; nm.textContent=c.nm;
-      var sm=document.createElement('small'); sm.textContent=(i===0?'1º no Brasil':'2º no Brasil')+' · '+c.sg+' '+c.n; nm.appendChild(sm);
+      var sm=document.createElement('small'); sm.textContent=c.sub?((i===0?'1º em votos':'2º em votos')+' · '+c.sub):((i===0?'1º no Brasil':'2º no Brasil')+' · '+c.sg+' '+c.num); nm.appendChild(sm);
       var pc=document.createElement('span'); pc.className='pc'; pc.textContent=pct(c.p,2);
       d.appendChild(dot); d.appendChild(nm); d.appendChild(pc); box.appendChild(d);
     });
   }
   function desenharTotal(){
     var st=$('stack'), tot=$('total'); st.innerHTML=''; tot.innerHTML='';
-    if(!nacional||!nacional.total){tot.innerHTML='<p class="note">Sem votos apurados ainda.</p>';return;}
+    if(!nacional||!nacional.total){tot.innerHTML='<p class="note">Sem votos apurados ainda.</p>';$('more').hidden=true;$('pst').textContent='--';$('tse').textContent='--';return;}
     tot.classList.toggle('open',totAberto);
     nacional.c.forEach(function(c,idx){
       cor(c.n);
@@ -283,9 +355,9 @@ a{color:var(--accent)}
       var row=linhaCand(c); if(idx>=4) row.classList.add('extra'); tot.appendChild(row);
     });
     var mais=$('more'); var n=nacional.c.length-4;
-    mais.hidden=n<=0; mais.textContent=totAberto?'Mostrar só os 4 primeiros':'Ver os outros '+n+' candidatos';
+    mais.hidden=n<=0; mais.textContent=totAberto?'Mostrar só os 4 primeiros':'Ver os outros '+n+(modo==='gov'?' partidos':' candidatos');
     $('pst').textContent=pct(nacional.pst,2)+' ('+br(nacional.st)+' de '+br(nacional.ts)+')';
-    $('tse').textContent=nacional.dt+' '+nacional.ht;
+    $('tse').textContent=(nacional.dt||'')+' '+(nacional.ht||'');
   }
 
   function texto(parent,t,x,y,size,weight,cls){
@@ -376,7 +448,8 @@ a{color:var(--accent)}
         texto(lab,pct(d?d.pst:0,0)+' das seções apuradas',bx+6,yb+41.5,7.4,500,'co-t m').setAttribute('text-anchor','start');
       }
     });
-    // exterior
+    // exterior (só presidente)
+    if(modo!=='pres') return;
     var dz=dados.zz, yz=Math.max(prev+58,490);
     var bz=el('rect',{x:628,y:yz,width:156,height:66,rx:4,'class':'co-box'+(sel==='zz'?' sel':''),tabindex:0,role:'button','aria-label':'Votos no exterior'},lab);
     bz.addEventListener('click',function(){escolher('zz');});
@@ -405,7 +478,7 @@ a{color:var(--accent)}
     d.c.forEach(function(c){
       var tr=document.createElement('tr');
       var a=document.createElement('td'); var dot=document.createElement('span'); dot.style.cssText='display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;background:'+cor(c.n); a.appendChild(dot); a.appendChild(document.createTextNode(c.nm));
-      var b=document.createElement('td'); b.textContent=c.sg+' '+c.n;
+      var b=document.createElement('td'); b.textContent=c.sg+' '+c.num;
       var v=document.createElement('td'); v.className='r'; v.textContent=br(c.v);
       var q=document.createElement('td'); q.className='r'; q.textContent=pct(c.p,2);
       tr.appendChild(a);tr.appendChild(b);tr.appendChild(v);tr.appendChild(q);tb.appendChild(tr);
@@ -416,7 +489,7 @@ a{color:var(--accent)}
   function desenharCartoes(){
     var box=$('cards'); box.innerHTML='';
     if(!MOB.matches) return;
-    var ids=Object.keys(STATES).sort(function(a,b){return STATES[a].name.localeCompare(STATES[b].name,'pt-BR');}).concat(['zz']);
+    var ids=Object.keys(STATES).sort(function(a,b){return STATES[a].name.localeCompare(STATES[b].name,'pt-BR');}).concat(modo==='pres'?['zz']:[]);
     ids.forEach(function(id){
       var d=dados[id], nome=id==='zz'?'Exterior':STATES[id].name;
       var b=document.createElement('button'); b.type='button'; b.className='card'+(sel===id?' sel':'');
@@ -444,7 +517,19 @@ a{color:var(--accent)}
     var dt=$('detail');
     if(MOB.matches && !dt.hidden && dt.scrollIntoView){ try{dt.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){dt.scrollIntoView();} }
   }
-  function desenhar(){desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
+  function titulos(){
+    var M=MODOS[modo]; $('h1').textContent=M.titulo; document.title=M.titulo; $('htot').textContent=M.htot; $('pstl').textContent=M.pstl;
+    $('svg').setAttribute('aria-label','Mapa do Brasil com o resultado de '+(modo==='gov'?'Governador':'Presidente')+' em cada estado');
+    ['pres','gov'].forEach(function(k){$('tab-'+k).setAttribute('aria-selected',k===modo?'true':'false');});
+  }
+  function trocar(m){
+    if(m===modo) return;
+    modo=m; if(sel==='zz'&&m==='gov') sel=null; totAberto=false;
+    try{ history.replaceState(null,'',m==='gov'?'#governador':'#presidente'); }catch(e){}
+    msg(''); sync(); titulos(); desenhar();
+    if(!S[m].ok) atualizar();
+  }
+  function desenhar(){titulos(); desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
   if(MOB.addEventListener) MOB.addEventListener('change',desenhar); else if(MOB.addListener) MOB.addListener(desenhar);
 
   function tick(){
@@ -460,8 +545,11 @@ a{color:var(--accent)}
     $('hintx').textContent = fit ? 'Mapa inteiro. Toque em Ampliar para ler os números dentro dos estados.' : 'Arraste o mapa para os lados. A lista logo abaixo mostra os mesmos números.';
   });
   $('btn').addEventListener('click',atualizar);
+  $('tab-pres').addEventListener('click',function(){trocar('pres');});
+  $('tab-gov').addEventListener('click',function(){trocar('gov');});
+  if(/gov/i.test(location.hash)){modo='gov'; sync();}
   $('auto').addEventListener('change',function(){restante=INTERVALO;tick();});
-  desenharMapa(); setInterval(tick,1000); atualizar();
+  titulos(); desenharMapa(); setInterval(tick,1000); atualizar();
 })();
 </script>
 </body>
