@@ -81,6 +81,7 @@ a{color:var(--accent)}
 .card .rw i{width:10px;height:10px;border-radius:3px}
 .card .rw span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .rw b{font-weight:500}
+.card .fl{color:var(--muted);font-size:.74rem;margin-top:1px}
 .card .pend{color:var(--muted);font-size:.85rem}
 @media (max-width:860px){
   body{padding:10px 12px 20px;font-size:15px}
@@ -149,6 +150,7 @@ a{color:var(--accent)}
     <h2 id="htot">Total geral (Brasil, inclui exterior)</h2>
     <div class="stack" id="stack" role="img" aria-label="Divisão dos votos entre os candidatos"></div>
     <div class="cands" id="total"><p class="note">Aguardando a primeira leitura.</p></div>
+    <p class="note" id="faltatot"></p>
     <button type="button" class="more" id="more" hidden></button>
   </section>
 
@@ -213,8 +215,8 @@ a{color:var(--accent)}
     });});});
     out.sort(function(a,b){return b.v-a.v;});
     var total=out.reduce(function(a,c){return a+c.v;},0);
-    var s=j.s||{};
-    return {c:out,total:total,pst:num(s.pst),st:parseInt(s.st,10)||0,ts:parseInt(s.ts,10)||0,dt:j.dt,ht:j.ht,dg:j.dg||j.dt,hg:j.hg||j.ht};
+    var s=j.s||{}, e=j.e||{};
+    return {c:out,total:total,pst:num(s.pst),st:parseInt(s.st,10)||0,ts:parseInt(s.ts,10)||0,dt:j.dt,ht:j.ht,dg:j.dg||j.dt,hg:j.hg||j.ht,te:parseInt(e.te,10)||0,comp:parseInt(e.c,10)||0,eest:parseInt(e.est,10)||0};
   }
 
   // Leitura com tempo limite; sem a opção "cache" (alguns navegadores de celular tratam mal esse pedido entre sites)
@@ -279,11 +281,21 @@ a{color:var(--accent)}
   }
 
   // Governador: soma dos votos por partido nos 27 estados e quantos estados cada partido lidera
+  // Estimativa: taxa de comparecimento do eleitorado já apurado aplicada ao eleitorado total
+  function falta(d){
+    if(!d||!d.te||!d.eest||!d.comp) return null;
+    return Math.max(0,Math.round(d.comp/d.eest*d.te-d.comp));
+  }
+  function mil(n){
+    if(n>=1e6) return (n/1e6).toFixed(1).replace('.',',')+' mi';
+    if(n>=1000) return Math.round(n/1000).toLocaleString('pt-BR')+' mil';
+    return String(n);
+  }
   function ordem(d,h){var p=String(d).split('/');return p[2]+p[1]+p[0]+' '+h;}
   function agregarGov(D){
-    var mp={}, tot=0, st=0, ts=0, dt=null, ht=null;
+    var mp={}, tot=0, st=0, ts=0, dt=null, ht=null, te=0, comp=0, eest=0;
     Object.keys(D).forEach(function(uf){
-      var d=D[uf]; if(!d) return; st+=d.st; ts+=d.ts; if(d.dg&&(!dt||ordem(d.dg,d.hg)>ordem(dt,ht))){dt=d.dg;ht=d.hg;}
+      var d=D[uf]; if(!d) return; st+=d.st; ts+=d.ts; te+=d.te; comp+=d.comp; eest+=d.eest; if(d.dg&&(!dt||ordem(d.dg,d.hg)>ordem(dt,ht))){dt=d.dg;ht=d.hg;}
       d.c.forEach(function(c,i){
         var e=mp[c.n]||(mp[c.n]={n:c.n,num:'',nm:c.sg,curto:c.sg,sg:c.sg,v:0,est:0,p:0});
         e.v+=c.v; tot+=c.v; if(i===0&&d.total) e.est++;
@@ -292,7 +304,7 @@ a{color:var(--accent)}
     var out=Object.keys(mp).map(function(k){var e=mp[k]; e.sub=e.est+(e.est===1?' estado na frente':' estados na frente'); return e;});
     out.sort(function(a,b){return b.v-a.v;});
     out.forEach(function(e){e.p=tot?e.v*100/tot:0;});
-    return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht,dg:dt,hg:ht};
+    return {c:out,total:tot,pst:ts?st*100/ts:0,st:st,ts:ts,dt:dt,ht:ht,dg:dt,hg:ht,te:te,comp:comp,eest:eest};
   }
   function chaveDados(m){
     return VIGIA[m].map(function(uf){var d=uf==='br'?S[m].nacional:S[m].dados[uf]; return d?(d.dt+' '+d.ht+' '+d.pst+' '+d.st):'-';}).join('|');
@@ -370,7 +382,7 @@ a{color:var(--accent)}
   }
   function desenharTotal(){
     var st=$('stack'), tot=$('total'); st.innerHTML=''; tot.innerHTML='';
-    if(!nacional||!nacional.total){tot.innerHTML='<p class="note">Sem votos apurados ainda.</p>';$('more').hidden=true;$('pst').textContent='--';$('tse').textContent='--';return;}
+    if(!nacional||!nacional.total){tot.innerHTML='<p class="note">Sem votos apurados ainda.</p>';$('more').hidden=true;$('faltatot').textContent='';$('pst').textContent='--';$('tse').textContent='--';return;}
     tot.classList.toggle('open',totAberto);
     nacional.c.forEach(function(c,idx){
       cor(c.n);
@@ -379,6 +391,8 @@ a{color:var(--accent)}
     });
     var mais=$('more'); var n=nacional.c.length-4;
     mais.hidden=n<=0; mais.textContent=totAberto?'Mostrar só os 4 primeiros':'Ver os outros '+n+(modo==='gov'?' partidos':' candidatos');
+    var ft=falta(nacional);
+    $('faltatot').textContent = ft!=null ? ('Eleitorado: '+br(nacional.te)+'. Compareceram nas seções já apuradas: '+br(nacional.comp)+'. Estimativa de votos que ainda faltam: cerca de '+br(ft)+' ('+mil(ft)+').') : '';
     $('pst').textContent=pct(nacional.pst,2)+' ('+br(nacional.st)+' de '+br(nacional.ts)+')';
     $('tse').textContent=(nacional.dg||'')+' '+(nacional.hg||'');
   }
@@ -408,7 +422,7 @@ a{color:var(--accent)}
       p.style.fill = f? f.color : 'var(--empty)'; p.style.fillOpacity = f? f.op : 1;
       var rot = s.name+(d&&d.total?': '+d.c[0].curto+' '+pct(d.c[0].p)+', '+(d.c[1]?d.c[1].curto+' '+pct(d.c[1].p):''):': sem votos apurados');
       p.setAttribute('aria-label',rot);
-      var t=el('title',{},p); t.textContent=rot+(d?' ('+pct(d.pst,1)+' das seções)':'');
+      var t=el('title',{},p); t.textContent=rot+(d?' ('+pct(d.pst,1)+' das seções'+(falta(d)!=null?'; faltam ~'+br(falta(d))+' votos':'')+')':'');
       p.addEventListener('click',function(){escolher(id);});
       p.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();escolher(id);}});
     });
@@ -467,10 +481,10 @@ a{color:var(--accent)}
           el('circle',{cx:bx+9,cy:yb+18.3+i*9,r:2.5,fill:cor(c.n)},lab);
           texto(lab,c.curto+' '+pct(c.p),bx+16,yb+21+i*9,8.4,i?400:500,'co-t').setAttribute('text-anchor','start');
         });
-        texto(lab,pct(d.pst,0)+' das seções apuradas',bx+6,yb+41.5,7.4,400,'co-t m').setAttribute('text-anchor','start');
+        texto(lab,pct(d.pst,0)+' apurado'+(falta(d)!=null?' · faltam ~'+mil(falta(d)):''),bx+6,yb+41.5,7.4,400,'co-t m').setAttribute('text-anchor','start');
       } else {
         texto(lab,'sem votos apurados',bx+6,yb+26,8,400,'co-t m').setAttribute('text-anchor','start');
-        texto(lab,pct(d?d.pst:0,0)+' das seções apuradas',bx+6,yb+41.5,7.4,400,'co-t m').setAttribute('text-anchor','start');
+        texto(lab,pct(d?d.pst:0,0)+' apurado'+(falta(d)!=null?' · faltam ~'+mil(falta(d)):''),bx+6,yb+41.5,7.4,400,'co-t m').setAttribute('text-anchor','start');
       }
     });
     // exterior (só presidente)
@@ -486,7 +500,7 @@ a{color:var(--accent)}
         texto(lab,c.curto+' '+pct(c.p),650,yz+27+i*10,8.4,i?400:500,'co-t').setAttribute('text-anchor','start');
       });
     } else texto(lab,'sem votos apurados',634,yz+32,8,400,'co-t m').setAttribute('text-anchor','start');
-    texto(lab,pct(dz?dz.pst:0,0)+' das seções apuradas',634,yz+57,7.4,400,'co-t m').setAttribute('text-anchor','start');
+    texto(lab,pct(dz?dz.pst:0,0)+' apurado'+(falta(dz)!=null?' · faltam ~'+mil(falta(dz)):''),634,yz+57,7.4,400,'co-t m').setAttribute('text-anchor','start');
   }
 
   function desenharDetalhe(){
@@ -496,6 +510,7 @@ a{color:var(--accent)}
     var h=document.createElement('h2'); h.textContent=nome; box.appendChild(h);
     if(!d||!d.total){var p=document.createElement('p'); p.className='note'; p.textContent='Sem votos apurados neste momento.'; box.appendChild(p); return;}
     var p2=document.createElement('p'); p2.className='note'; p2.textContent=pct(d.pst,2)+' das seções totalizadas ('+br(d.st)+' de '+br(d.ts)+'). Votos válidos: '+br(d.total)+'.'; box.appendChild(p2);
+    if(falta(d)!=null){var p3=document.createElement('p'); p3.className='note'; p3.textContent='Eleitorado: '+br(d.te)+'. Compareceram nas seções já apuradas: '+br(d.comp)+' ('+pct(d.comp*100/d.eest,1)+' do eleitorado apurado). Estimativa de votos que ainda faltam: cerca de '+br(falta(d))+'.'; box.appendChild(p3);}
     var w=document.createElement('div'); w.className='tw';
     var t=document.createElement('table');
     t.innerHTML='<thead><tr><th>Candidato</th><th>Partido</th><th class="r">Votos</th><th class="r">%</th></tr></thead>';
@@ -531,6 +546,7 @@ a{color:var(--accent)}
           var pc=document.createElement('b'); pc.textContent=pct(c.p);
           rw.appendChild(dot); rw.appendChild(nm); rw.appendChild(pc); b.appendChild(rw);
         });
+        if(falta(d)!=null){var fl=document.createElement('div'); fl.className='fl'; fl.textContent='faltam ~'+mil(falta(d))+' votos'; b.appendChild(fl);}
       } else { var p=document.createElement('div'); p.className='pend'; p.textContent='Sem votos apurados'; b.appendChild(p); }
       b.addEventListener('click',function(){escolher(id,true);});
       box.appendChild(b);
