@@ -62,6 +62,14 @@ svg.map{display:block;width:100%;min-width:760px;height:auto}
 .co-t.m{fill:var(--muted)}
 .leader{stroke:var(--fg);stroke-width:.8;opacity:.55;pointer-events:none;fill:none}
 .anchor{fill:#fff;stroke:#000;stroke-width:.8;pointer-events:none}
+.mapgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+@media (min-width:1100px){.mapgrid{grid-template-columns:minmax(0,1fr) 410px;align-items:start}}
+table.proj{font-size:.76rem}
+table.proj th,table.proj td{padding:3px 5px;white-space:nowrap}
+table.proj tbody tr{cursor:pointer}
+table.proj tbody tr:hover,table.proj tbody tr.sel{background:var(--bg)}
+table.proj td i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+.sit{font-weight:500}.sit.def{color:var(--accent)}.sit.ab{color:var(--warn)}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 th{color:var(--muted);font-weight:500;font-size:.82rem}
@@ -137,6 +145,7 @@ a{color:var(--accent)}
 
   <div id="msg" class="msg" hidden></div>
 
+  <div class="mapgrid">
   <section class="panel" aria-labelledby="hmap">
     <h2 id="hmap">Resultado por estado</h2>
     <div class="hint" id="hint"><span id="hintx">Arraste o mapa para os lados. A lista logo abaixo mostra os mesmos números.</span> <button type="button" class="more" id="zoom">Ver mapa inteiro</button></div>
@@ -144,6 +153,13 @@ a{color:var(--accent)}
     <div class="cards" id="cards" aria-label="Resultado por estado em lista"></div>
     <p class="note">Cor do estado: candidato mais votado (mais clara quando a vantagem é pequena). Percentuais sobre os votos válidos já apurados. Toque num estado para ver todos os candidatos.</p>
   </section>
+  <section class="panel" id="projpanel" aria-labelledby="hproj">
+    <h2 id="hproj">Projeção de fechamento por estado</h2>
+    <div class="tw"><table class="proj" id="tproj"></table></div>
+    <p class="note" id="projnac"></p>
+    <p class="note">Projeção: supõe que os votos que faltam seguem a mesma proporção já apurada em cada estado. "Definido" = a diferença de votos já é maior que tudo o que falta. Toque numa linha para ver o estado.</p>
+  </section>
+  </div>
 
   <section class="panel" id="detail" aria-live="polite" hidden></section>
   <section class="panel" aria-labelledby="htot">
@@ -570,7 +586,42 @@ a{color:var(--accent)}
     msg(''); sync(); titulos(); desenhar();
     if(!S[m].ok) atualizar();
   }
-  function desenhar(){titulos(); desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
+  function projEstado(d){
+    var f=falta(d); if(!d||!d.total) return null;
+    var R=(f&&d.comp)?f*d.total/d.comp:0; // votos válidos que ainda faltam (estimativa)
+    var m=d.c[1]?d.c[0].v-d.c[1].v:d.c[0].v;
+    var fechado=d.pst>=99.99||R<1;
+    return {R:R,def:fechado||m>R,fechado:fechado};
+  }
+  function desenharProj(){
+    var t=$('tproj'); t.innerHTML='';
+    var th=document.createElement('thead'); th.innerHTML='<tr><th>UF</th><th>Apur. %</th><th>1º fecha em %</th><th>2º fecha em %</th><th>Situação</th></tr>'; t.appendChild(th);
+    var tb=document.createElement('tbody');
+    var ids=Object.keys(STATES).sort().concat(modo==='pres'?['zz']:[]);
+    var acc={}, totR=0, totV=0;
+    ids.forEach(function(id){
+      var d=dados[id], pr=projEstado(d), tr=document.createElement('tr'); if(sel===id) tr.className='sel';
+      function td(txt,cls){var c=document.createElement('td'); if(cls) c.className=cls; c.textContent=txt; tr.appendChild(c); return c;}
+      td(id==='zz'?'EXT':id.toUpperCase()).style.fontWeight='500';
+      td(d?pct(d.pst,0).replace('%',''):'--');
+      if(!d||!d.total){td('--');td('--');td('sem votos');}
+      else{
+        [d.c[0],d.c[1]].forEach(function(c){
+          var c1=td(''); if(!c) return; var dot=document.createElement('i'); dot.style.background=cor(c.n); c1.appendChild(dot); c1.appendChild(document.createTextNode(c.curto+' '+pct(c.p).replace('%','')));
+        });
+        var sc=td(pr.fechado?'Fechado':(pr.def?'Definido':'Aberto'),'sit '+(pr.def?'def':'ab'));
+        d.c.forEach(function(c){var o=acc[c.n]||(acc[c.n]={n:c.n,curto:c.curto,v:0}); o.v+=c.v+(d.total?pr.R*c.v/d.total:0);});
+        totR+=pr.R; totV+=d.total;
+      }
+      tr.addEventListener('click',function(){escolher(id);});
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    var nn=$('projnac'), lista=Object.keys(acc).map(function(k){return acc[k];}).sort(function(a,b){return b.v-a.v;});
+    var den=totV+totR;
+    nn.textContent = (lista.length>=2&&den>0) ? ('Projeção Brasil'+(modo==='gov'?' (por partido, soma dos estados)':'')+': '+lista[0].curto+' '+pct(lista[0].v*100/den)+' · '+lista[1].curto+' '+pct(lista[1].v*100/den)+'. Faltam cerca de '+mil(Math.round(totR))+' votos válidos a apurar.') : '';
+  }
+  function desenhar(){titulos(); desenharProj(); desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
   if(MOB.addEventListener) MOB.addEventListener('change',desenhar); else if(MOB.addListener) MOB.addListener(desenhar);
 
   function tick(){
