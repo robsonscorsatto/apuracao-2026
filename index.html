@@ -64,8 +64,21 @@ svg.map{display:block;width:100%;min-width:760px;height:auto}
 .anchor{fill:#fff;stroke:#000;stroke-width:.8;pointer-events:none}
 .mapgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 @media (min-width:1100px){.mapgrid{grid-template-columns:minmax(0,1fr) 410px;align-items:start}}
+.pb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 8px}
+.pb .c{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--bg)}
+.pb .c .n{display:flex;align-items:center;gap:8px;font-weight:500}
+.pb .c .n i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.pb .c .v{font-size:1.9rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
+.pb .c small{color:var(--muted)}
+.pbar{display:flex;height:14px;border-radius:5px;overflow:hidden;margin-bottom:8px;background:var(--empty)}
+.pbar i{display:block;height:100%}
+.refdet{margin-top:6px;font-size:.85rem}
+.refdet summary{cursor:pointer;color:var(--accent);min-height:28px}
+.refdet p,.refdet ul{margin:6px 0;color:var(--muted)}
+.note.warn{color:var(--warn)}
 table.proj{font-size:.76rem}
 table.proj th,table.proj td{padding:3px 5px;white-space:nowrap}
+table.proj tfoot td{font-weight:600;border-top:2px solid var(--fg);border-bottom:0;background:var(--bg)}
 table.proj tbody tr{cursor:pointer}
 table.proj tbody tr:hover,table.proj tbody tr.sel{background:var(--bg)}
 table.proj td i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
@@ -134,6 +147,14 @@ a{color:var(--accent)}
 
   <div class="tabs" role="tablist" aria-label="Cargo"><button type="button" role="tab" id="tab-pres" aria-selected="true">Presidente</button><button type="button" role="tab" id="tab-gov" aria-selected="false">Governador</button></div>
 
+  <section class="panel" id="probpanel" aria-labelledby="hprob" hidden>
+    <h2 id="hprob">Probabilidade do resultado final (Flávio × Lula)</h2>
+    <div id="probbody"></div>
+    <details class="refdet"><summary>Modelos, como é calculado e dados de referência</summary>
+      <div id="probref"></div>
+    </details>
+  </section>
+
   <div class="lead" id="lead" aria-live="polite"></div>
 
   <div class="status" id="status" aria-live="polite">
@@ -160,6 +181,7 @@ a{color:var(--accent)}
     <p class="note">Projeção: supõe que os votos que faltam seguem a mesma proporção já apurada em cada estado. "Definido" = a diferença de votos já é maior que tudo o que falta. Toque numa linha para ver o estado.</p>
   </section>
   </div>
+
 
   <section class="panel" id="detail" aria-live="polite" hidden></section>
   <section class="panel" aria-labelledby="htot">
@@ -274,7 +296,7 @@ a{color:var(--accent)}
   }
 
   async function descobrirCodigo(m){
-    if(S[m].cfg) return S[m].cfg;
+    if(S[m].cfg && Date.now()-(S[m].cfgT||0)<1800000) return S[m].cfg;
     var M=MODOS[m], achados=[];
     try{
       var j = await lerJSON(BASE+'comum/config/ele-c.json?nocache='+Date.now());
@@ -288,10 +310,12 @@ a{color:var(--accent)}
     }catch(e){}
     achados.sort(function(a,b){return b.t-a.t;});
     var lista = achados.map(function(a){return a.cd;});
+    var turnoDe={}; achados.forEach(function(a){turnoDe[a.cd]=a.t;});
+    if(m==='pres'&&lista.indexOf('6258')<0){lista.push('6258'); turnoDe['6258']=2;}
     if(lista.indexOf(M.padrao)<0) lista.push(M.padrao);
     var ultimo=null;
     for(var i=0;i<lista.length;i++){
-      try{ await lerJSON(urlUF(lista[i],M.teste,m)); S[m].cfg=lista[i]; return lista[i]; }catch(e){ ultimo=e; }
+      try{ await lerJSON(urlUF(lista[i],M.teste,m)); S[m].cfg=lista[i]; S[m].cfgT=Date.now(); S[m].turno=turnoDe[lista[i]]||1; return lista[i]; }catch(e){ ultimo=e; }
     }
     throw ultimo || new Error('Não achei a eleição no TSE.');
   }
@@ -586,6 +610,190 @@ a{color:var(--accent)}
     msg(''); sync(); titulos(); desenhar();
     if(!S[m].ok) atualizar();
   }
+  // Curva de referência do 1º turno: % de urnas apuradas, Flávio (PL 22) %, Lula (PT 13) %
+  var REF=[[41.57,50.41,41.44],[47.26,50.20,41.63],[64.81,49.58,42.25],[84,48.47,43.49],[90,48.03,43.99],[96.78,47.48,44.63],[99.94,47.04,45.14]];
+  function muDe(f,l){return (f-l)/(f+l);}
+  function muRef(x){
+    var a=REF[0]; if(x<a[0]) return null;
+    var z=REF[REF.length-1]; if(x>=z[0]) return muDe(z[1],z[2]);
+    for(var i=0;i<REF.length-1;i++){
+      var p=REF[i],q=REF[i+1];
+      if(x>=p[0]&&x<=q[0]){var t=(x-p[0])/(q[0]-p[0]); return muDe(p[1],p[2])*(1-t)+muDe(q[1],q[2])*t;}
+    }
+    return null;
+  }
+  function phi(z){ // função de distribuição normal
+    var t=1/(1+0.2316419*Math.abs(z)), d=0.3989423*Math.exp(-z*z/2);
+    var p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+    return z>0?1-p:p;
+  }
+  function pctProb(p){ if(p>=0.9995) return 'mais de 99,9%'; if(p<=0.0005) return 'menos de 0,1%'; return pct(p*100,1); }
+  // ---- Modelo de probabilidade (Flávio × Lula) -------------------------------------------------
+  // A) Curva nacional: aplica à diferença de hoje o deslocamento que a curva do 1º turno mostra até o fim.
+  // B) Estado a estado: projeta os votos que faltam em cada estado pelo % de Flávio e Lula já apurado ali,
+  //    com um deslocamento (LAMBDA da curva do 1º turno) a favor de quem costuma ganhar votos no fim.
+  // O resultado é a mistura dos dois modelos (a divergência entre eles entra como incerteza).
+  // Fechamento oficial do 1º turno (Presidente, TSE, eleição 6257): votos de Flávio (PL 22) e Lula (PT 13) por estado e exterior
+  var BASE1 = {"ac":[302807,134770],"al":[735718,995459],"am":[976764,1046996],"ap":[212278,212503],"ba":[2442585,5664771],"ce":[1756850,3555263],"df":[909616,675627],"es":[1233194,850028],"go":[2051888,1188880],"ma":[1239040,2566301],"mg":[5777548,5188936],"ms":[873351,516855],"mt":[1298581,581681],"pa":[2163957,2427237],"pb":[831377,1541127],"pe":[1738043,3553971],"pi":[517028,1523710],"pr":[3945345,2054597],"rj":[4966844,3693021],"rn":[720493,1237963],"ro":[652988,250667],"rr":[231322,74420],"rs":[3573783,2294759],"sc":[3000020,1127168],"se":[417839,856019],"sp":[12922023,9505413],"to":[469321,404009],"zz":[143900,157387]};
+  var LAMBDA = 0.5, DEG_ESTADO = 0.04;
+  var REGIOES={'Nordeste':['ma','pi','ce','rn','pb','pe','al','se','ba'],'Norte':['ac','ap','am','pa','ro','rr','to'],'Centro-Oeste':['df','go','mt','ms'],'Sudeste':['es','mg','rj','sp'],'Sul':['pr','rs','sc']};
+  function regioes(est){
+    var out=[], totR=0, mapa={}; est.forEach(function(e){mapa[e.id]=e; totR+=e.R;});
+    Object.keys(REGIOES).forEach(function(n){
+      var st=0,ts=0,R=0,f=0,l=0;
+      REGIOES[n].forEach(function(id){var d=dados[id], e=mapa[id]; if(d){st+=d.st; ts+=d.ts;} if(e){R+=e.R; f+=e.f; l+=e.l;}});
+      out.push({nome:n,pst:ts?st*100/ts:0,R:R,partR:totR?R*100/totR:0,pF:(f+l)?f*100/(f+l):0});
+    });
+    return out;
+  }
+  function modeloProb(){
+    var F=null,L=null;
+    if(nacional&&nacional.c) nacional.c.forEach(function(c){if(c.n==='22') F=c; if(c.n==='13') L=c;});
+    if(!F||!L) return {erro:'Aguardando dados de Flávio Bolsonaro e Lula na apuração nacional.'};
+    var x=nacional.pst;
+    // agrega estados
+    var est=[], sumF=0,sumL=0,sumR=0;
+    Object.keys(dados).concat(modo==='pres'?[]:[]).forEach(function(id){
+      var d=dados[id]; if(!d||!d.total) return;
+      var f=null,l=null; d.c.forEach(function(c){if(c.n==='22') f=c; if(c.n==='13') l=c;});
+      if(!f||!l) return;
+      var S=f.v+l.v; if(S<=0) return;
+      var fl=falta(d), R=(fl&&d.comp)?fl*S/d.comp:0; // votos de Flávio+Lula que ainda faltam
+      est.push({id:id,f:f.v,l:l.v,S:S,R:R,pst:d.pst});
+      sumF+=f.v; sumL+=l.v; sumR+=R;
+    });
+    if(!est.length) return {erro:'Aguardando dados dos estados.'};
+    var SN=F.p+L.p, muNow=muDe(F.p,L.p);
+    if(x>=99.99) return {fim:true,F:F,L:L};
+    var preliminar=x<41.57, xr=Math.max(x,REF[0][0]);
+    var mr=muRef(xr), zr=REF[REF.length-1], delta=muDe(zr[1],zr[2])-mr; // deslocamento esperado (negativo = encolhe a favor de Lula)
+    var r=Math.max(0.0005,1-x/100);
+    // A) curva nacional
+    var muA=muNow+delta, sigA=(0.25*Math.abs(delta)+0.002)*(preliminar?1.5:1);
+    // B) estado a estado
+    var b=LAMBDA*(delta/r)/2; // deslocamento (em fração de votos) do % de Flávio nos votos que faltam
+    var Ff=0,Lf=0, varSamp=0, folha=[];
+    est.forEach(function(e){
+      var p=e.f/e.S, pr=Math.min(1,Math.max(0,p+b));
+      var fF=e.f+e.R*pr, fL=e.l+e.R*(1-pr); Ff+=fF; Lf+=fL;
+      varSamp+=e.R*4*pr*(1-pr)+Math.pow(e.R*2*DEG_ESTADO,2); // amostragem binomial + heterogeneidade dentro do estado
+      folha.push({id:e.id,pst:e.pst,pF:p,fF:fF,fL:fL,mar:fF-fL,R:e.R});
+    });
+    var T=Ff+Lf, muB=(Ff-Lf)/T;
+    var sigComum=(0.5*Math.abs(b)+0.005)*2*sumR/T;           // choque comum a todos os estados
+    var sigB=Math.sqrt(varSamp)/T; sigB=Math.sqrt(sigB*sigB+sigComum*sigComum)*(preliminar?1.5:1);
+    sigB=Math.max(sigB,0.002);
+    // C) estado a estado com a base do fechamento do 1º turno (só quando a eleição em curso é o 2º turno)
+    var temC=(S.pres.turno===2)&&est.every(function(e){return BASE1[e.id];});
+    var muC=null,sigC=null,gNac=null,viesA=null;
+    if(temC){
+      var viesP=LAMBDA*Math.max(0,(mr-muDe(zr[1],zr[2]))/2);   // parte do excesso do % de Flávio apurado (curva do 1º turno) que vem da ordem de apuração dentro de cada estado
+      var sw=0,sd=0;
+      est.forEach(function(e){var b1=BASE1[e.id], p1=b1[0]/(b1[0]+b1[1]); e.p1=p1; e.d=e.f/e.S-viesP-p1; sw+=e.S*e.d; sd+=e.S;});
+      var g=sw/sd; gNac=g; viesA=viesP;
+      var Fc=0,Lc=0, varI=0, sumRsig=0, tot=0;
+      var sigCm=0.25*Math.abs(delta)/(2*r);             // choque comum no % de Flávio dos votos que faltam
+      est.forEach(function(e){
+        var k=Math.min(1,Math.max(0,e.pst/100));
+        var sws=k*e.d+(1-k)*g, pfin=Math.min(1,Math.max(0,e.p1+sws));
+        var Tt=e.S+e.R, rem=e.R>0?Math.min(1,Math.max(0,(Tt*pfin-e.f)/e.R)):0;
+        e.pfinC=pfin; e.premC=rem;
+        var fF=e.f+e.R*rem, fL=e.l+e.R*(1-rem); Fc+=fF; Lc+=fL;
+        var u=DEG_ESTADO*(1-k)+0.01;
+        varI+=e.R*4*rem*(1-rem)+Math.pow(e.R*2*u,2); sumRsig+=e.R;
+        e.fFC=fF; e.fLC=fL;
+      });
+      tot=Fc+Lc; muC=(Fc-Lc)/tot;
+      var sdC=Math.sqrt(varI+Math.pow(2*sigCm*sumRsig,2))/tot;
+      sigC=Math.max(sdC*(preliminar?1.5:1),0.002);
+      folha.forEach(function(f){var e=est.filter(function(z){return z.id===f.id;})[0]; if(e){f.p1=e.p1; f.pfinC=e.pfinC; f.marC=e.fFC-e.fLC;}});
+    }
+    // D) base do 1º turno por estado + evolução nacional: mudança uniforme de um turno para o outro (estimada nos votos já
+    //    apurados no Brasil) aplicada ao fechamento de cada estado; o que falta apurar pesa conforme onde ele está (ex.: Nordeste)
+    var muD=null,sigD=null,dInfo=null;
+    if(temC){
+      var kk=viesA/r, S3=0,sw3=0,sq3=0;
+      est.forEach(function(e){var c=Math.min(1,Math.max(0,e.pst/100)); e.cc=c; e.dD=e.f/e.S-kk*(1-c)-e.p1; sw3+=e.S*e.dD; S3+=e.S; sq3+=e.S*e.S;});
+      var g3=sw3/S3, v3=0; est.forEach(function(e){v3+=e.S*Math.pow(e.dD-g3,2);}); var sdd=Math.sqrt(v3/S3);
+      var neff=S3*S3/sq3, seg=sdd/Math.sqrt(neff);
+      var FD=0,LD=0,vI=0,sR=0,cb=0;
+      est.forEach(function(e){
+        var prem=Math.min(1,Math.max(0,e.p1+g3-kk*e.cc));
+        var fF=e.f+e.R*prem, fL=e.l+e.R*(1-prem); FD+=fF; LD+=fL; e.premD=prem; e.fFD=fF; e.fLD=fL;
+        vI+=e.R*4*prem*(1-prem)+Math.pow(e.R*2*Math.max(sdd,0.01),2); sR+=e.R; cb+=e.R*e.cc;
+      });
+      cb=sR>0?cb/sR:0;
+      var comum=Math.sqrt(seg*seg+Math.pow(0.25*kk*cb,2)+0.01*0.01);
+      var TD=FD+LD; muD=(FD-LD)/TD; sigD=Math.max(Math.sqrt(vI+Math.pow(2*comum*sR,2))/TD*(preliminar?2.5:1),0.002);
+      dInfo={g:g3,sd:sdd,k:kk};
+      folha.forEach(function(f){var e=est.filter(function(z){return z.id===f.id;})[0]; if(e){f.p1=e.p1; f.marD=e.fFD-e.fLD;}});
+    }
+    // mistura (pesos pelo inverso da variância; mínimo de 15% para cada modelo disponível)
+    var mods=[{k:'A',mu:muA,sig:sigA},{k:'B',mu:muB,sig:sigB}]; if(temC){mods.push({k:'C',mu:muC,sig:sigC}); mods.push({k:'D',mu:muD,sig:sigD});}
+    var iv=mods.reduce(function(a,m){return a+1/(m.sig*m.sig);},0);
+    mods.forEach(function(m){m.w=(1/(m.sig*m.sig))/iv; m.w=Math.max(m.w,0.15); m.p=phi(m.mu/m.sig);});
+    var sw2=mods.reduce(function(a,m){return a+m.w;},0); mods.forEach(function(m){m.w/=sw2;});
+    var muM=0,pF=0,vv=0; mods.forEach(function(m){muM+=m.w*m.mu; pF+=m.w*m.p;});
+    mods.forEach(function(m){vv+=m.w*m.sig*m.sig+m.w*Math.pow(m.mu-muM,2);});
+    var band=Math.sqrt(vv);
+    var md=null; mods.forEach(function(m){if(m.k==='D') md=m;});
+    var princ=md?{mu:md.mu,sig:md.sig,p:md.p,k:'D'}:{mu:muM,sig:band,p:pF,k:'mix'};
+    return {F:F,L:L,x:x,SN:SN,muNow:muNow,muM:muM,pF:pF,lo:muM-band,hi:muM+band,mods:mods,
+            preliminar:preliminar,folha:folha,sumR:sumR,b:b,delta:delta,temC:temC,gNac:gNac,vies:viesA,princ:princ,dInfo:dInfo,regiao:regioes(est)};
+  }
+  function desenharProb(){
+    var pan=$('probpanel');
+    if(modo!=='pres'){pan.hidden=true;return;}
+    pan.hidden=false;
+    var body=$('probbody'); body.innerHTML='';
+    var rf=$('probref');
+    function msgp(t,cls){var p=document.createElement('p'); p.className='note'+(cls?' '+cls:''); p.textContent=t; body.appendChild(p);}
+    var M=modeloProb();
+    var sgn=function(v){return (v>=0?'Flávio +':'Lula +')+Math.abs(v).toFixed(2).replace('.',',')+' p.p.';};
+    var refTab='<table class="proj"><thead><tr><th>Urnas apuradas</th><th>Flávio</th><th>Lula</th><th>Diferença (p.p.)</th></tr></thead><tbody>'+
+      '<tr><td>10%</td><td>51,09%</td><td>n/d</td><td>n/d</td></tr>'+
+      REF.map(function(r){return '<tr><td>'+(r[0]===90?'90%+':pct(r[0],r[0]%1?2:0))+'</td><td>'+pct(r[1],2)+'</td><td>'+pct(r[2],2)+'</td><td>'+(r[1]-r[2]).toFixed(2).replace('.',',')+'</td></tr>';}).join('')+'</tbody></table>';
+    var metodo='<p><b>Modelos combinados.</b> (A) <b>Curva da apuração</b>: comparo a diferença Flávio × Lula de hoje, em proporção ao total dos dois, com a curva do 1º turno no mesmo ponto das urnas e aplico o quanto ela "andou" até o fim (a vantagem de Flávio encolheu enquanto as urnas fechavam). (B) <b>Estado a estado</b>: em cada estado, projeto os votos que faltam (eleitorado × comparecimento já visto) pelo % de Flávio e Lula já apurado ali, com um deslocamento a favor de Lula igual a '+Math.round(LAMBDA*100)+'% do que a curva do 1º turno indica para o restante das urnas. (C) <b>Estado a estado com a base do 1º turno</b> (só no 2º turno): parto do fechamento oficial do 1º turno em cada estado e estimo quanto o % de Flávio mudou de um turno para o outro, olhando os votos já apurados no 2º turno; desconto o viés de ordem de apuração dentro do estado ('+Math.round(LAMBDA*100)+'% do excesso que a curva do 1º turno mostra no % de Flávio apurado no começo), e uso o estado dos votos já apurados com peso proporcional à parcela apurada, e a média nacional da mudança para o restante. (D) <b>Base do 1º turno + evolução nacional</b> (modelo principal no 2º turno): aplico a cada estado a mesma mudança, estimada nos votos já apurados no Brasil e corrigida pelo viés de ordem de apuração, sobre o fechamento do 1º turno dele; o que falta apurar pesa conforme onde está (o Nordeste, por exemplo, que tende a Lula, entra com o peso do que ainda falta lá). No topo mostro o modelo D; a mistura de todos aparece nos detalhes.</p>'+
+      '<p>Incerteza adotada: no A, 25% do deslocamento da curva; no B e no C, amostragem dos votos que faltam, variação dentro de cada estado (4 p.p. no B; no C diminui conforme o estado é apurado) e um choque comum a todos os estados. Antes de 41,57% de urnas apuradas a curva de referência não existe: a estimativa é marcada como preliminar, com incerteza 50% maior.</p>'+
+      '<p>Limites: a curva nacional vem de um único turno e não há séries por estado; os parâmetros acima são adotados, não calibrados em várias eleições. É um guia estatístico, não uma previsão oficial.</p>'+refTab+
+      '<p>Ressalvas da tabela: o ponto de 90% é aproximado (a fonte diz "mais de 90%"); não há valor de Lula com 10% das urnas; a diferença é cálculo a partir dos percentuais; o eixo é o % de urnas apuradas, não o horário.</p>';
+    if(M.erro){rf.innerHTML=metodo; msgp(M.erro); return;}
+    if(M.fim){
+      rf.innerHTML=metodo;
+      var fim=M.F.v>M.L.v?M.F:M.L; msgp('Apuração concluída: '+fim.nm+' à frente por '+br(Math.abs(M.F.v-M.L.v))+' votos ('+pct(Math.abs(M.F.p-M.L.p),2).replace('%','')+' p.p.).'); return;
+    }
+    // tabela por estado
+    var linhas=M.folha.slice().sort(function(a,b){return b.R-a.R;}).map(function(e){
+      var nome=e.id==='zz'?'EXT':e.id.toUpperCase();
+      var mar=M.temC&&e.marD!=null?e.marD:e.mar;
+      return '<tr><td>'+nome+'</td><td>'+pct(e.pst,0).replace('%','')+'</td><td>'+pct(e.pF*100,1).replace('%','')+'</td>'+(M.temC?'<td>'+(e.p1!=null?pct(e.p1*100,1).replace('%',''):'--')+'</td>':'')+'<td>'+mil(Math.round(e.R))+'</td><td>'+(mar>=0?'Flávio +':'Lula +')+mil(Math.round(Math.abs(mar)))+'</td></tr>';
+    }).join('');
+    rf.innerHTML=metodo+'<p><b>Por estado</b>, ordenado por votos que faltam. "Flávio % hoje": parte de Flávio nos votos de Flávio+Lula já apurados'+(M.temC?'; "Flávio % 1º turno": o mesmo no fechamento do 1º turno; o saldo final projetado é o do modelo D':'; o saldo final projetado é o do modelo B')+'.</p><table class="proj"><thead><tr><th>UF</th><th>Apur. %</th><th>Flávio % hoje</th>'+(M.temC?'<th>Flávio % 1º turno</th>':'')+'<th>Faltam</th><th>Saldo final projetado</th></tr></thead><tbody>'+linhas+'</tbody></table>';
+    var F=M.F,L=M.L,S=M.SN, fF=(1+M.princ.mu)/2*S, fL=(1-M.princ.mu)/2*S, pF=M.princ.p, pL=1-pF;
+    var grid=document.createElement('div'); grid.className='pb';
+    [[F,pF,fF],[L,pL,fL]].forEach(function(a){
+      var c=document.createElement('div'); c.className='c';
+      var n=document.createElement('div'); n.className='n'; var dot=document.createElement('i'); dot.style.background=cor(a[0].n); n.appendChild(dot); n.appendChild(document.createTextNode(a[0].nm+' ('+a[0].sg+')')); c.appendChild(n);
+      var v=document.createElement('div'); v.className='v'; v.textContent=pctProb(a[1]); c.appendChild(v);
+      var sm=document.createElement('small'); sm.textContent='de chance de vencer · fecha em ~'+pct(a[2],1)+' dos votos válidos'; c.appendChild(sm);
+      grid.appendChild(c);
+    });
+    body.appendChild(grid);
+    var bar=document.createElement('div'); bar.className='pbar'; bar.setAttribute('role','img'); bar.setAttribute('aria-label','Probabilidade de vitória');
+    [[F,pF],[L,pL]].forEach(function(a){var i=document.createElement('i'); i.style.width=(a[1]*100)+'%'; i.style.background=cor(a[0].n); bar.appendChild(i);});
+    body.appendChild(bar);
+    if(M.preliminar) msgp('Estimativa preliminar: com menos de 41,57% das urnas apuradas a curva de referência ainda não existe, e a incerteza está ampliada.','warn');
+    msgp('Urnas apuradas: '+pct(M.x,2)+'. Diferença hoje: '+sgn(F.p-L.p)+' Projeção de fechamento'+(M.princ.k==='D'?' (modelo D, base do 1º turno)':' (mistura dos modelos)')+': '+sgn(M.princ.mu*S)+' (faixa provável: '+sgn((M.princ.mu-M.princ.sig)*S)+' a '+sgn((M.princ.mu+M.princ.sig)*S)+'). Faltam cerca de '+mil(Math.round(M.sumR))+' votos de Flávio e Lula a apurar.');
+    var nomes={A:'A (curva da apuração)',B:'B (estado a estado)',C:'C (estado + base do 1º turno)',D:'D (base do 1º turno + evolução nacional)'};
+    var extras=[];
+    function msgx(t){extras.push('<p>'+t.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</p>');}
+    msgx('Modelos: '+M.mods.map(function(m){return nomes[m.k]+': '+sgn(m.mu*S)+', chance de Flávio '+pctProb(m.p)+', peso '+Math.round(m.w*100)+'%';}).join(' · ')+'.');
+    msgx('Mistura de todos os modelos: '+sgn(M.muM*S)+', chance de Flávio '+pctProb(M.pF)+'.');
+    var rg=M.regiao.slice().sort(function(a,b){return b.R-a.R;});
+    msgp('Apuração por região (% de seções): '+rg.map(function(r){return r.nome+' '+pct(r.pst,0)+' (concentra '+pct(r.partR,0)+' do que falta, Flávio '+pct(r.pF,0)+' hoje)';}).join(' · ')+'.');
+    if(M.temC) msgx('Mudança média de Flávio entre os turnos nos estados já apurados (já descontado o viés de ordem de apuração): '+((M.gNac>=0?'+':'−')+(Math.abs(M.gNac)*100).toFixed(1).replace('.',','))+' p.p. no % de Flávio entre Flávio e Lula.');
+    rf.innerHTML='<p><b>Detalhes dos modelos</b></p>'+extras.join('')+rf.innerHTML;
+  }
   function projEstado(d){
     var f=falta(d); if(!d||!d.total) return null;
     var R=(f&&d.comp)?f*d.total/d.comp:0; // votos válidos que ainda faltam (estimativa)
@@ -598,7 +806,7 @@ a{color:var(--accent)}
     var th=document.createElement('thead'); th.innerHTML='<tr><th>UF</th><th>Apur. %</th><th>1º fecha em %</th><th>2º fecha em %</th><th>Situação</th></tr>'; t.appendChild(th);
     var tb=document.createElement('tbody');
     var ids=Object.keys(STATES).sort().concat(modo==='pres'?['zz']:[]);
-    var acc={}, totR=0, totV=0;
+    var acc={}, totR=0, totV=0, totS=0, totT=0;
     ids.forEach(function(id){
       var d=dados[id], pr=projEstado(d), tr=document.createElement('tr'); if(sel===id) tr.className='sel';
       function td(txt,cls){var c=document.createElement('td'); if(cls) c.className=cls; c.textContent=txt; tr.appendChild(c); return c;}
@@ -610,8 +818,8 @@ a{color:var(--accent)}
           var c1=td(''); if(!c) return; var dot=document.createElement('i'); dot.style.background=cor(c.n); c1.appendChild(dot); c1.appendChild(document.createTextNode(c.curto+' '+pct(c.p).replace('%','')));
         });
         var sc=td(pr.fechado?'Fechado':(pr.def?'Definido':'Aberto'),'sit '+(pr.def?'def':'ab'));
-        d.c.forEach(function(c){var o=acc[c.n]||(acc[c.n]={n:c.n,curto:c.curto,v:0}); o.v+=c.v+(d.total?pr.R*c.v/d.total:0);});
-        totR+=pr.R; totV+=d.total;
+        d.c.forEach(function(c){var o=acc[c.n]||(acc[c.n]={n:c.n,curto:c.curto,v:0,h:0}); o.h+=c.v; o.v+=c.v+(d.total?pr.R*c.v/d.total:0);});
+        totR+=pr.R; totV+=d.total; totS+=d.st; totT+=d.ts;
       }
       tr.addEventListener('click',function(){escolher(id);});
       tb.appendChild(tr);
@@ -619,9 +827,20 @@ a{color:var(--accent)}
     t.appendChild(tb);
     var nn=$('projnac'), lista=Object.keys(acc).map(function(k){return acc[k];}).sort(function(a,b){return b.v-a.v;});
     var den=totV+totR;
-    nn.textContent = (lista.length>=2&&den>0) ? ('Projeção Brasil'+(modo==='gov'?' (por partido, soma dos estados)':'')+': '+lista[0].curto+' '+pct(lista[0].v*100/den)+' · '+lista[1].curto+' '+pct(lista[1].v*100/den)+'. Faltam cerca de '+mil(Math.round(totR))+' votos válidos a apurar.') : '';
+    var den=totV+totR;
+    if(lista.length>=2&&den>0){
+      var tf=document.createElement('tfoot'), tr=document.createElement('tr');
+      function tdf(txt){var c=document.createElement('td'); c.textContent=txt; tr.appendChild(c); return c;}
+      tdf('BRASIL'); tdf(totT?pct(totS*100/totT,0).replace('%',''):'--');
+      [lista[0],lista[1]].forEach(function(c){var c1=tdf(''); var dot=document.createElement('i'); dot.style.background=cor(c.n); c1.appendChild(dot); c1.appendChild(document.createTextNode(c.curto+' '+pct(c.v*100/den).replace('%','')));});
+      var hist=lista.slice().sort(function(a,b){return b.h-a.h;});
+      var defn=(hist[0].h-hist[1].h)>totR;
+      var sc=tdf(defn?'Definido':'Aberto'); sc.className='sit '+(defn?'def':'ab');
+      tf.appendChild(tr); t.appendChild(tf);
+      nn.textContent='Projeção Brasil'+(modo==='gov'?' (por partido, soma dos estados)':'')+', cada estado com o peso do que ainda falta nele: '+lista[0].curto+' '+pct(lista[0].v*100/den)+' · '+lista[1].curto+' '+pct(lista[1].v*100/den)+' (hoje: '+hist[0].curto+' '+pct(hist[0].h*100/totV)+' · '+hist[1].curto+' '+pct(hist[1].h*100/totV)+'). Faltam cerca de '+mil(Math.round(totR))+' votos válidos a apurar.';
+    } else nn.textContent='';
   }
-  function desenhar(){titulos(); desenharProj(); desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
+  function desenhar(){titulos(); desenharProj(); desenharProb(); desenharLider(); desenharTotal(); desenharMapa(); desenharCartoes(); desenharDetalhe();}
   if(MOB.addEventListener) MOB.addEventListener('change',desenhar); else if(MOB.addListener) MOB.addListener(desenhar);
 
   function tick(){
